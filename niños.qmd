@@ -294,7 +294,7 @@ ggplotly(plot, tooltip = "text")
 
 ## Promedio de Ingresos por Género
 
-Es posible que las madres obtengan ingresos menores a los de las demás mujeres porque el hecho de tener hijos puede hacer que pierdan experiencia laboral, que busquen y elijan empleos caracterizados por permitir horarios flexibles en lugar de altas remuneraciones. Y, además, que sean sujeto de discriminación por parte de los empleadores al momento de la contratación (Olarte, L, & Peña, X. (2010)
+> Es posible que las madres obtengan ingresos menores a los de las demás mujeres porque el hecho de tener hijos puede hacer que pierdan experiencia laboral, que busquen y elijan empleos caracterizados por permitir horarios flexibles en lugar de altas remuneraciones. Y, además, que sean sujeto de discriminación por parte de los empleadores al momento de la contratación (Olarte & Peña, 2010)
 
 ## Fuente
 
