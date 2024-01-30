@@ -1,6 +1,8 @@
 # childcare costs
 
-Ejercicio realizado con dataset de [tidytuesday](https://github.com/rfordatascience/tidytuesday/tree/master/data/2023/2023-05-09). Es este repositorio se realiza un analisis exploratorio de las variables referidas al costo del cuidado infantil y los ingresos de las familias de los diferentes estados.
+Ejercicio realizado con dataset de [tidytuesday](https://github.com/rfordatascience/tidytuesday/tree/master/data/2023/2023-05-09). Es este repositorio se realiza una presentación con un analisis exploratorio de las variables referidas al costo del cuidado infantil y los ingresos de las familias de los diferentes estados.
+
+La presentación puede verse [acá](https://rpubs.com/arianabard/childcare-costs)
 
 ### Data Dictionary
 
