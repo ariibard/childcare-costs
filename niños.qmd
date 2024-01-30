@@ -1,0 +1,305 @@
+---
+title: "El costo del cuidado infantil en EEUU"
+author: "Ariana Bardauil"
+format:
+  revealjs: 
+    theme: [simple]
+    embed-resources: true
+    code-fold: false
+editor: visual
+---
+
+<!-- CONSIGNA: La idea es ver qué logras armar con algún dataset provisto por Tidy Tuesday y elegido con tu propio criterio: https://github.com/rfordatascience/tidytuesday/tree/master  -->
+
+<!-- Una vez hayas seleccionado el dataset, será necesario que simules que estás trabajando dentro de una base de datos. Mira este ejemplo para saber a qué me refiero: https://colorado.posit.co/rsc/content/7389/sqlserver_temp_tables.nb.html  -->
+
+<!-- Lineamientos: -->
+
+<!-- ●  Armar una presentación en el formato deseado que responda al menos 2 preguntas que tú determines y que te parezcan interesantes. -->
+
+<!-- ●  Justificación de la elección del conjunto de datos. -->
+
+<!-- ●  Idealmente, la presentación debe estar realizada en R usando RMd, Quarto o cualquier otra herramienta de visualización que consideres. -->
+
+<!-- ●  Crear un repositorio en GitHub con el código y compartirlo al siguiente usuario en caso de que sea un repo privado: "augustohassel". -->
+
+<!-- ●  Escribe consultas SQL para extraer información específica (por ejemplo, sumas, promedios, conteos). -->
+
+<!-- ●  Realiza al menos un JOIN entre dos tablas para combinar datos. -->
+
+<!-- ●  Crea una consulta que involucre una subconsulta o una función de ventana. -->
+
+<!-- Qué voy a estar mirando: -->
+
+<!-- ●  Reproducibilidad del repositorio. -->
+
+<!-- ●  Qué librerías usas para trabajar. -->
+
+<!-- ●  Uso del tidyverse para manipular la data. purrr es uno de mis mejores amigos, pero hay muchas más funciones que map/walk. -->
+
+<!-- ●  Uso de tidyverse style guide. DRY, legibilidad, etc. -->
+
+<!-- ●  Eficiencia y claridad de tus consultas SQL. -->
+
+<!-- ●  Uso correcto de JOINs, subconsultas y funciones de ventana. -->
+
+<!-- Importante: La idea no es que inviertas demasiadas horas en esta presentación y tampoco hay una respuesta incorrecta a lo que armes. Lo más importante es el código, que me dará una idea clara de dónde estamos parados para construir un equipo. -->
+
+## Elección del dataset
+
+De la diversidad de **tidytuesday** seleccioné `childcare_costs` ya que me resultó interesante observar la relación entre el costo del cuidado de los niños y los ingresos de hombres y mujeres. Tiene la particularidad de poseer información de todos los estados de EEUU y variables demográficas.
+
+El detalle de las variables puede verse en este [link](https://github.com/rfordatascience/tidytuesday/tree/master/data/2023/2023-05-09)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, error = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(DBI)
+library(dbplyr)
+library(glue)
+library(janitor)
+library(tidyr)
+library(plotly)
+library(sf)
+library(leaflet)
+
+us_states <- sf::st_read("us-states.json") 
+# Cargo CSVs del repositorio
+
+childcare_costs <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-05-09/childcare_costs.csv') |> 
+  clean_names()
+counties <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-05-09/counties.csv') |> 
+  clean_names()
+
+
+
+# Simulo trabajar en una base de datos
+con <- dbConnect(duckdb::duckdb(), ":memory:")
+
+
+# Copio los datasets
+dbWriteTable(con, "childcare_costs", childcare_costs)
+dbWriteTable(con, "counties", counties)
+
+
+rm(childcare_costs, counties)
+
+```
+
+## Objetivos
+
+-   Proporcionar una descripción general de los costos del cuidado infantil en los EE UU.
+-   Analizar la diferencia de ingresos entre los géneros
+
+## Cuidado infantil en montos
+
+Los costos del cuidado infantil varían según la edad del niño y el tipo de cuidado
+
+```{r}
+
+
+costos_por_edad <- tbl(con, "childcare_costs") |> 
+  # Mc es el precio del cuidado infantil segun rangos de edad full time
+  select(study_year,
+         county_fips_code,
+         mc_infant,
+         mc_toddler,
+         mc_preschool,
+         mcsa
+         ) |> 
+  collect() |> 
+  rename("0-23m" = mc_infant,
+         "24-35m" = mc_toddler, 
+         "36-54m" = mc_preschool,
+         "6-12 años" = mcsa
+         ) |> 
+  pivot_longer(cols = c("0-23m", "24-35m","36-54m","6-12 años" ), names_to = "meses_edad", values_to = "precio_fulltime") |>
+  left_join(tbl(con, "childcare_costs") |> 
+  # Mfc ces el precio del cuidado infantil segun rangos de edad medio tiempo
+  select(county_fips_code,
+         mfcc_infant,
+         mfcc_toddler,
+         mfcc_preschool) |> 
+  collect() |> 
+    # Genero una tabla larga para poder graficar
+  rename("0-23m" = mfcc_infant,
+         "24-35m" = mfcc_toddler, 
+         "36-54m" = mfcc_preschool
+         ) |> 
+  pivot_longer(cols = c("0-23m", "24-35m","36-54m" ), names_to = "meses_edad", values_to = "precio_medio_tiempo")) |> 
+  pivot_longer(cols = c(precio_medio_tiempo, precio_fulltime), names_to = "tipo_cuidado", values_to = "precio") |> 
+  group_by(study_year, tipo_cuidado, meses_edad) |> 
+  summarise(precio_promedio = mean(precio, na.rm = TRUE))
+
+
+
+
+# Grafico 
+plot <- ggplot(costos_por_edad) +
+  aes(
+    x = round(study_year,0),
+    y = precio_promedio,
+    colour = tipo_cuidado, 
+  ) +
+  geom_line() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = " ",
+    y = "US$D",
+    title = "Precio semanal del cuidado de niños por edad y tipo de cuidado",
+    color = "Tipo de cuidado"
+  ) +
+  ggthemes::theme_pander() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(size = 18L,
+    face = "bold",
+    hjust = 0.5)
+  ) +
+  facet_wrap(vars(meses_edad))
+
+ggplotly(plot)
+
+```
+
+## Precio del cuidado infantil e ingresos medios en EEUU
+
+```{r}
+
+consulta <- glue("SELECT
+  state_name,
+  state_abbreviation AS id,
+  AVG(mc_infant) AS mc_infant_avg,
+  AVG(mc_toddler) AS mc_toddler_avg,
+  AVG(mc_preschool) AS mc_preschool_avg,
+  AVG(mhi_2018) AS mhi_2018_avg
+FROM
+  childcare_costs
+  JOIN counties
+  ON childcare_costs.county_fips_code = counties.county_fips_code
+WHERE
+  study_year = 2018
+GROUP BY
+  state_name,
+id")
+
+
+# Me traigo la informacion geo
+
+
+por_estados <- dbGetQuery(con, consulta) 
+
+us_states <- us_states |> 
+  left_join(por_estados, by = 'id')
+
+# Paleta
+pal <- colorQuantile("YlGn", NULL, n = 5)
+pal2 <- colorQuantile("PRGn", NULL, n = 5)
+pal3 <- colorQuantile("PuBu", NULL, n = 5)
+pal4 <- colorQuantile("Oranges", NULL, n = 5)
+# GRafico mapa
+leaflet() |> 
+  geoAr::addArgTiles() |> 
+  addPolygons(data = us_states,
+              group = "mc_infant_avg", 
+              fillColor = ~pal(us_states$mc_infant_avg),
+              fillOpacity = 0.8, 
+              color = "white", 
+              weight = 1,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "18px",
+                direction = "auto"))%>%
+    addPolygons(data = us_states,
+                group = "mc_toddler_avg",
+              fillColor = ~pal2(us_states$mc_toddler_avg),
+              fillOpacity = 0.8, 
+              color = "white", 
+              weight = 1,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "18px",
+                direction = "auto")) %>%
+    addPolygons(data = us_states,
+                group = "mc_preschool_avg",
+              fillColor = ~pal3(us_states$mc_preschool_avg),
+              fillOpacity = 0.8, 
+              color = "white", 
+              weight = 1,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "18px",
+                direction = "auto")) %>%
+    addPolygons(data = us_states,
+                group = "mhi_2018_avg",
+              fillColor = ~pal4(us_states$mhi_2018_avg),
+              #fillColor = ~color,
+              fillOpacity = 0.8, 
+              color = "white", 
+              weight = 1,
+              #label = ~mytext%>%lapply(htmltools::HTML), 
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "18px",
+                direction = "auto"))%>%
+  addLayersControl(baseGroups = c("mc_infant_avg", "mc_toddler_avg","mc_preschool_avg", "mhi_2018_avg"),
+                   options = layersControlOptions(collapsed = FALSE))
+
+
+```
+
+## Precio del cuidado infantil según el Estado
+
+Se observa que los estados con mayores ingresos promedio tienden a tener costos de cuidado infantil más altos, pero hay excepciones. Por ejemplo, California tiene el costo de cuidado infantil más alto, pero no el ingreso promedio más alto
+
+El costo del cuidado infantil (mensual) es una parte significativa del presupuesto de las familias. Para los hogares con ingresos más bajos, el costo del cuidado infantil puede ser una barrera para la participación laboral de los padres, especialmente las madres
+
+## Promedio de ingresos según género
+
+```{r, fig.width=10, fig.height=6}
+
+# Promedio de ingresos según géneros
+query <- glue("SELECT study_year AS anio, AVG(mme_2018) AS ingreso_prom_masc, 
+              AVG(fme_2018) AS ingreso_prom_fem
+              FROM childcare_costs
+              GROUP BY study_year")
+#Corro la query
+promedio_ingresos <- dbGetQuery(con, query) |> 
+  pivot_longer(cols = c("ingreso_prom_masc",
+                        "ingreso_prom_fem"), names_to = "genero", values_to = "ingreso_promedio") |> mutate(genero = case_when(genero == "ingreso_prom_fem" ~ "Femenino",
+                                                                                                                               genero == "ingreso_prom_masc" ~ "Masculino"))
+
+
+# Grafico
+plot <- ggplot(promedio_ingresos, aes(x = factor(anio), y = ingreso_promedio, fill = genero, text = paste("Año:", anio, "\n Promedio de ingresos anuales:", round(ingreso_promedio,2) ))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("#E91D63","#112446")) +
+  labs(x = "Año", y = "Ingreso Promedio", fill = "Género")+
+  labs(
+    x = " ",
+    y = "ingreso",
+    title = "Ingreso promedio anual por género",
+    color = "Género"
+  ) +
+  theme(
+    plot.title = element_text(size = 18L,
+    face = "bold",
+    hjust = 0.5)
+  )+
+  ggthemes::theme_pander()
+
+ggplotly(plot, tooltip = "text")
+```
+
+## Promedio de Ingresos por Género
+
+Es posible que las madres obtengan ingresos menores a los de las demás mujeres porque el hecho de tener hijos puede hacer que pierdan experiencia laboral, que busquen y elijan empleos caracterizados por permitir horarios flexibles en lugar de altas remuneraciones. Y, además, que sean sujeto de discriminación por parte de los empleadores al momento de la contratación (Olarte, L, & Peña, X. (2010)
+
+## Fuente
+
+-   Dataset: [Tidytuesday](https://github.com/rfordatascience/tidytuesday/tree/master/data/2023/2023-05-09)
+
+-   Olarte, Liliana, & Peña, Ximena. (2010). El Efecto de la Maternidad Sobre los Ingresos Femeninos. *Ensayos sobre POLÍTICA ECONÓMICA*, *28*(63), 190-230. Retrieved January 30, 2024. Disponible [acá](http://www.scielo.org.co/scielo.php?pid=S0120-44832010000300006&script=sci_arttext)
+
+# Gracias 
